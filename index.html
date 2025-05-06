@@ -141,19 +141,22 @@
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0);
 
-                ctx.font = '32px Arial'; // Ukuran tetap
+                // Tentukan ukuran font relatif terhadap lebar gambar (misalnya 5% dari lebar gambar)
+                const fontSize = img.width * 0.045; // 5% dari lebar gambar
+                ctx.font = `${fontSize}px Arial`;
                 ctx.fillStyle = 'white';
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 2;
-                ctx.textAlign = 'right'; // Geser ke kanan
+                ctx.textAlign = 'right';
 
-                const x = canvas.width - 10; // Dekat sisi kanan
-                let y = canvas.height - 250; // Dekat sisi bawah
+                // Tentukan posisi teks relatif terhadap gambar
+                const x = img.width * 0.98; // 5% dari kanan
+                let y = img.height * 0.80; // 10% dari bawah
 
                 const wrapText = (text, x, y, maxWidth) => {
                     const words = text.split(' ');
                     let line = '';
-                    const lineHeight = 35;
+                    const lineHeight = fontSize * 1.1; // Jarak antar baris relatif terhadap ukuran font
                     for (let i = 0; i < words.length; i++) {
                         const testLine = line + words[i] + ' ';
                         const testWidth = ctx.measureText(testLine).width;
@@ -171,10 +174,10 @@
                 };
 
                 // Maksimal lebar teks tetap disesuaikan
-                const maxWidth = canvas.width - 300;
+                const maxWidth = img.width * 0.60; // 85% dari lebar gambar
 
                 wrapText(text1, x, y, maxWidth);
-                y += 40;
+                y += fontSize * 1.5; // Jarak antar baris relatif terhadap ukuran font
                 wrapText(text2, x, y, maxWidth);
 
                 const base64WithText = canvas.toDataURL("image/jpeg");
@@ -182,6 +185,7 @@
             };
             img.src = imageBase64;
         }
+
 
 
         // Event listener untuk tombol Tambahkan Geotag & Unduh
