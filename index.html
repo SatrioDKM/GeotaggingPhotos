@@ -144,7 +144,7 @@
                 ctx.textAlign = 'left';
 
                 const x = 10;
-                let y = canvas.height - 50;
+                let y = canvas.height - 100;
 
                 // Fungsi untuk membatasi panjang teks agar tidak melebihi lebar gambar
                 const wrapText = (text, x, y, maxWidth) => {
@@ -168,9 +168,9 @@
                 };
 
                 // Batasi teks agar tidak keluar dari batas gambar
-                wrapText(text1, x, y, img.width - 20);
+                wrapText(text1, x, y, img.width - 50);
                 y += 40; // Menambah jarak untuk teks berikutnya
-                wrapText(text2, x, y, img.width - 20);
+                wrapText(text2, x, y, img.width - 50);
 
                 // Mengubah gambar dengan teks menjadi base64 dan memanggil callback
                 const base64WithText = canvas.toDataURL("image/jpeg");
