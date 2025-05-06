@@ -24,11 +24,23 @@
     <div class="max-w-md mx-auto bg-white rounded-xl shadow-md p-4">
         <h1 class="text-xl font-bold text-center mb-4">📍 Geotag Foto</h1>
 
-        <input type="file" id="photoInput" accept="image/jpeg" class="mb-4" />
+        <div class="mb-4">
+            <label for="photoInput" class="block text-sm font-medium text-gray-700">Unggah Foto (JPG)</label>
+            <input type="file" id="photoInput" accept="image/jpeg"
+                class="mt-2 w-full text-sm text-gray-700 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </div>
+
+        <div id="imagePreview" class="mb-4 text-center">
+            <img id="previewImage" class="w-full h-64 object-contain border rounded-md hidden" />
+        </div>
+
         <div id="map" class="h-64 w-full mb-4"></div>
+
         <div class="text-sm mb-2">Koordinat: <span id="coords">Belum dipilih</span></div>
         <div class="text-sm mb-4">Alamat: <span id="address">Belum tersedia</span></div>
-        <button id="addGeotagBtn" class="bg-blue-500 text-white px-4 py-2 rounded w-full">Tambahkan Geotag & Unduh</button>
+
+        <button id="addGeotagBtn" class="bg-blue-500 text-white px-4 py-2 rounded w-full">Tambahkan Geotag &
+            Unduh</button>
     </div>
 
     <canvas id="previewCanvas" class="hidden"></canvas>
@@ -102,6 +114,9 @@
                 const reader = new FileReader();
                 reader.onload = function (event) {
                     originalImg = event.target.result;
+                    const previewImage = document.getElementById('previewImage');
+                    previewImage.src = originalImg;
+                    previewImage.classList.remove('hidden');
                 };
                 reader.readAsDataURL(file);
             } else {
@@ -127,9 +142,65 @@
                 minute: '2-digit',
                 second: '2-digit',
                 hour12: true
-            })
+            });
         }
 
+        function correctImageOrientation(base64Image) {
+            const img = new Image();
+            img.src = base64Image;
+
+            return new Promise((resolve, reject) => {
+                img.onload = function () {
+                    const exifData = piexif.load(base64Image);
+                    const orientation = exifData['0th'][piexif.ImageIFD.Orientation];
+
+                    // Jika tidak ada tag orientasi atau orientasi = 1, gambar sudah dalam posisi yang benar
+                    if (orientation === 1) {
+                        resolve(base64Image);  // Gambar tidak perlu diputar
+                        return;
+                    }
+
+                    const canvas = document.createElement("canvas");
+                    const ctx = canvas.getContext("2d");
+
+                    // Tentukan dimensi canvas sesuai ukuran gambar
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+
+                    // Berdasarkan nilai orientasi, lakukan rotasi atau flip gambar
+                    switch (orientation) {
+                        case 3: // 180 deg
+                            ctx.rotate(Math.PI);
+                            ctx.drawImage(img, -img.width, -img.height);
+                            break;
+                        case 6: // 90 deg
+                            canvas.width = img.height;
+                            canvas.height = img.width;
+                            ctx.rotate(90 * Math.PI / 180);
+                            ctx.drawImage(img, 0, -img.height);
+                            break;
+                        case 8: // -90 deg
+                            canvas.width = img.height;
+                            canvas.height = img.width;
+                            ctx.rotate(-90 * Math.PI / 180);
+                            ctx.drawImage(img, -img.width, 0);
+                            break;
+                        default:
+                            ctx.drawImage(img, 0, 0); // Tidak ada perubahan
+                    }
+
+                    // Ambil gambar yang sudah diperbaiki dari canvas
+                    const fixedBase64Image = canvas.toDataURL();
+                    resolve(fixedBase64Image);
+                };
+
+                img.onerror = function (error) {
+                    reject(error);
+                };
+            });
+        }
+
+        // Fungsi untuk menambahkan teks pada gambar
         function drawTextOnImage(imageBase64, text1, text2, callback) {
             const img = new Image();
             img.onload = function () {
@@ -137,106 +208,67 @@
                 canvas.width = img.width;
                 canvas.height = img.height;
                 const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
 
-                // Memperbaiki orientasi gambar
-                const orientation = piexif.load(imageBase64)["0th"]["Orientation"];
-                if (orientation > 1) {
-                    const rotateCanvas = document.createElement("canvas");
-                    const rotateCtx = rotateCanvas.getContext("2d");
-                    rotateCanvas.width = img.width;
-                    rotateCanvas.height = img.height;
+                // Tentukan ukuran font relatif terhadap lebar gambar (misalnya 5% dari lebar gambar)
+                const fontSize = img.width * 0.045; // 5% dari lebar gambar
+                ctx.font = `${fontSize}px Arial`;
+                ctx.fillStyle = 'white';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2;
+                ctx.textAlign = 'right';
 
-                    const degree = orientation === 6 ? 90 : orientation === 3 ? 180 : orientation === 8 ? 270 : 0;
-                    rotateCtx.save();
-                    rotateCtx.translate(rotateCanvas.width / 2, rotateCanvas.height / 2);
-                    rotateCtx.rotate(degree * Math.PI / 180);
-                    rotateCtx.drawImage(img, -img.width / 2, -img.height / 2);
-                    rotateCtx.restore();
+                // Tentukan posisi teks relatif terhadap gambar
+                const x = img.width * 0.98; // 5% dari kanan
+                let y = img.height * 0.80; // 10% dari bawah
 
-                    img.src = rotateCanvas.toDataURL("image/jpeg");
-                    img.onload = function () {
-                        ctx.drawImage(img, 0, 0);
-                        renderText(ctx, img, text1, text2, callback);
-                    };
-                } else {
-                    ctx.drawImage(img, 0, 0);
-                    renderText(ctx, img, text1, text2, callback);
-                }
+                const wrapText = (text, x, y, maxWidth) => {
+                    const words = text.split(' ');
+                    let line = '';
+                    const lineHeight = fontSize * 1.1; // Jarak antar baris relatif terhadap ukuran font
+                    for (let i = 0; i < words.length; i++) {
+                        const testLine = line + words[i] + ' ';
+                        const testWidth = ctx.measureText(testLine).width;
+                        if (testWidth > maxWidth && i > 0) {
+                            ctx.strokeText(line, x, y);
+                            ctx.fillText(line, x, y);
+                            line = words[i] + ' ';
+                            y += lineHeight;
+                        } else {
+                            line = testLine;
+                        }
+                    }
+                    ctx.strokeText(line, x, y);
+                    ctx.fillText(line, x, y);
+                };
+
+                wrapText(text1, x, y, img.width * 0.60);
+
+                y += fontSize * 1.4;
+                wrapText(text2, x, y, img.width * 0.60);
+
+                callback(canvas.toDataURL());
             };
             img.src = imageBase64;
         }
 
-        function renderText(ctx, img, text1, text2, callback) {
-            const fontSize = img.width * 0.045;
-            ctx.font = `${fontSize}px Arial`;
-            ctx.fillStyle = 'white';
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 2;
-            ctx.textAlign = 'right';
-
-            const x = img.width * 0.98;
-            let y = img.height * 0.80;
-
-            const wrapText = (text, x, y, maxWidth) => {
-                const words = text.split(' ');
-                let line = '';
-                const lineHeight = fontSize * 1.1;
-                for (let i = 0; i < words.length; i++) {
-                    const testLine = line + words[i] + ' ';
-                    const testWidth = ctx.measureText(testLine).width;
-                    if (testWidth > maxWidth && i > 0) {
-                        ctx.strokeText(line, x, y);
-                        ctx.fillText(line, x, y);
-                        line = words[i] + ' ';
-                        y += lineHeight;
-                    } else {
-                        line = testLine;
-                    }
-                }
-                ctx.strokeText(line, x, y);
-                ctx.fillText(line, x, y);
-            };
-
-            const maxWidth = img.width * 0.60;
-            wrapText(text1, x, y, maxWidth);
-            y += fontSize * 1.5;
-            wrapText(text2, x, y, maxWidth);
-
-            const base64WithText = canvas.toDataURL("image/jpeg");
-            callback(base64WithText);
-        }
-
+        // Event untuk tombol tambah geotag dan unduh gambar
         document.getElementById('addGeotagBtn').addEventListener('click', () => {
             if (!lat || !lng || !originalImg) {
                 alert("Pastikan foto dan lokasi telah dipilih!");
                 return;
             }
 
-            const exifData = piexif.load(originalImg);
-            const latInExif = toExifCoord(lat);
-            const lonInExif = toExifCoord(lng);
-
-            const datetime = getCurrentTime();
-            const geotaggedImg = piexif.insert(
-                piexif.dump({
-                    "0th": {
-                        [piexif.ImageIFD.DateTime]: datetime
-                    },
-                    "GPS": {
-                        [piexif.GPSIFD.GPSLatitudeRef]: lat < 0 ? 'S' : 'N',
-                        [piexif.GPSIFD.GPSLongitudeRef]: lng < 0 ? 'W' : 'E',
-                        [piexif.GPSIFD.GPSLatitude]: latInExif,
-                        [piexif.GPSIFD.GPSLongitude]: lonInExif
-                    }
-                }),
-                originalImg
-            );
-
-            drawTextOnImage(geotaggedImg, datetime, currentAddress, function (imageWithText) {
-                const a = document.createElement('a');
-                a.href = imageWithText;
-                a.download = fileName;
-                a.click();
+            correctImageOrientation(originalImg).then(correctedImage => {
+                const datetime = getCurrentTime();
+                const geotaggedImg = drawTextOnImage(correctedImage, datetime, currentAddress, function (imageWithText) {
+                    const a = document.createElement('a');
+                    a.href = imageWithText;
+                    a.download = fileName;
+                    a.click();
+                });
+            }).catch(error => {
+                console.error("Error correcting orientation: ", error);
             });
         });
     </script>
