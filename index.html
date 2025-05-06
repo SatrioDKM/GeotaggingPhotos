@@ -137,14 +137,14 @@
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0);
 
-                ctx.font = `${Math.floor(canvas.width / 30)}px Arial`;
+                ctx.font = `${Math.floor(canvas.width / 25)}px Arial`;
                 ctx.fillStyle = 'white';
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 2;
                 ctx.textAlign = 'left';
 
                 const x = 10;
-                let y = canvas.height - 100;
+                let y = canvas.height - 130;
 
                 // Fungsi untuk membatasi panjang teks agar tidak melebihi lebar gambar
                 const wrapText = (text, x, y, maxWidth) => {
