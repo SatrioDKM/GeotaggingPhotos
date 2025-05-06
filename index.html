@@ -5,17 +5,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Alat Geotagging Foto</title>
-    <!-- Piexif.js untuk manipulasi EXIF -->
     <script src="https://unpkg.com/piexifjs"></script>
-    <!-- Leaflet.js untuk peta interaktif -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-    <!-- Tailwind CSS untuk styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Leaflet Control Geocoder untuk pencarian alamat -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
     <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
-    <!-- Leaflet Locate Control untuk menemukan lokasi pengguna -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet.locatecontrol/dist/L.Control.Locate.min.css" />
     <script src="https://unpkg.com/leaflet.locatecontrol/dist/L.Control.Locate.min.js"></script>
 </head>
@@ -28,8 +23,9 @@
         <div id="map" class="h-64 w-full mb-4"></div>
         <div class="text-sm mb-2">Koordinat: <span id="coords">Belum dipilih</span></div>
         <div class="text-sm mb-4">Alamat: <span id="address">Belum tersedia</span></div>
-        <button id="addGeotagBtn" class="bg-blue-500 text-white px-4 py-2 rounded w-full">Tambahkan Geotag &
-            Unduh</button>
+        <button id="addGeotagBtn" class="bg-blue-500 text-white px-4 py-2 rounded w-full">
+            Tambahkan Geotag & Unduh
+        </button>
     </div>
 
     <canvas id="previewCanvas" class="hidden"></canvas>
@@ -37,13 +33,9 @@
     <script>
         let lat = null, lng = null, originalImg = null, fileName = "foto-geotagged.jpg", currentAddress = "";
 
-        // Inisialisasi peta
-        const map = L.map('map').setView([-6.270909700955028, 106.74094707993366], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap'
-        }).addTo(map);
+        const map = L.map('map').setView([-6.2709, 106.7409], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
 
-        // Tambahkan kontrol pencarian alamat
         L.Control.geocoder({ defaultMarkGeocode: false })
             .on('markgeocode', function (e) {
                 const center = e.geocode.center;
@@ -57,7 +49,6 @@
             })
             .addTo(map);
 
-        // Tambahkan kontrol untuk menemukan lokasi pengguna
         L.control.locate({
             position: 'topleft',
             flyTo: true,
@@ -68,9 +59,7 @@
             onLocationOutsideMapBounds: function (context) {
                 alert("Lokasi di luar batas peta.");
             },
-            locateOptions: {
-                enableHighAccuracy: true
-            }
+            locateOptions: { enableHighAccuracy: true }
         }).addTo(map);
 
         let marker = null;
@@ -102,13 +91,27 @@
             if (file && file.type === "image/jpeg") {
                 const reader = new FileReader();
                 reader.onload = function (event) {
-                    originalImg = event.target.result;
+                    const imageBase64 = event.target.result;
+                    removeOrientationTag(imageBase64, function (cleanedBase64) {
+                        originalImg = cleanedBase64;
+                        console.log("Orientation tag removed.");
+                    });
                 };
                 reader.readAsDataURL(file);
             } else {
                 alert("Hanya file JPG yang didukung!");
             }
         });
+
+        function removeOrientationTag(imageBase64, callback) {
+            const exif = piexif.load(imageBase64);
+            if (exif['0th'][piexif.ImageIFD.Orientation]) {
+                delete exif['0th'][piexif.ImageIFD.Orientation];
+            }
+            const exifBytes = piexif.dump(exif);
+            const newBase64 = piexif.insert(exifBytes, imageBase64);
+            callback(newBase64);
+        }
 
         function toExifCoord(val) {
             val = Math.abs(val);
@@ -128,9 +131,8 @@
                 minute: '2-digit',
                 second: '2-digit',
                 hour12: true
-            })
+            });
         }
-
 
         function drawTextOnImage(imageBase64, text1, text2, callback) {
             const img = new Image();
@@ -141,22 +143,20 @@
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0);
 
-                // Tentukan ukuran font relatif terhadap lebar gambar (misalnya 5% dari lebar gambar)
-                const fontSize = img.width * 0.045; // 5% dari lebar gambar
+                const fontSize = img.width * 0.045;
                 ctx.font = `${fontSize}px Arial`;
                 ctx.fillStyle = 'white';
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 2;
                 ctx.textAlign = 'right';
 
-                // Tentukan posisi teks relatif terhadap gambar
-                const x = img.width * 0.98; // 5% dari kanan
-                let y = img.height * 0.80; // 10% dari bawah
+                const x = img.width * 0.98;
+                let y = img.height * 0.80;
 
                 const wrapText = (text, x, y, maxWidth) => {
                     const words = text.split(' ');
                     let line = '';
-                    const lineHeight = fontSize * 1.1; // Jarak antar baris relatif terhadap ukuran font
+                    const lineHeight = fontSize * 1.1;
                     for (let i = 0; i < words.length; i++) {
                         const testLine = line + words[i] + ' ';
                         const testWidth = ctx.measureText(testLine).width;
@@ -173,11 +173,9 @@
                     ctx.fillText(line, x, y);
                 };
 
-                // Maksimal lebar teks tetap disesuaikan
-                const maxWidth = img.width * 0.60; // 85% dari lebar gambar
-
+                const maxWidth = img.width * 0.60;
                 wrapText(text1, x, y, maxWidth);
-                y += fontSize * 1.5; // Jarak antar baris relatif terhadap ukuran font
+                y += fontSize * 1.5;
                 wrapText(text2, x, y, maxWidth);
 
                 const base64WithText = canvas.toDataURL("image/jpeg");
@@ -186,9 +184,6 @@
             img.src = imageBase64;
         }
 
-
-
-        // Event listener untuk tombol Tambahkan Geotag & Unduh
         document.getElementById('addGeotagBtn').addEventListener('click', () => {
             if (!lat || !lng || !originalImg) {
                 alert("Pastikan foto dan lokasi telah dipilih!");
@@ -198,24 +193,21 @@
             const exifData = piexif.load(originalImg);
             const latInExif = toExifCoord(lat);
             const lonInExif = toExifCoord(lng);
-
             const datetime = getCurrentTime();
-            const geotaggedImg = piexif.insert(
-                piexif.dump({
-                    "0th": {
-                        [piexif.ImageIFD.DateTime]: datetime
-                    },
-                    "GPS": {
-                        [piexif.GPSIFD.GPSLatitudeRef]: lat < 0 ? 'S' : 'N',
-                        [piexif.GPSIFD.GPSLongitudeRef]: lng < 0 ? 'W' : 'E',
-                        [piexif.GPSIFD.GPSLatitude]: latInExif,
-                        [piexif.GPSIFD.GPSLongitude]: lonInExif
-                    }
-                }),
-                originalImg
-            );
 
-            drawTextOnImage(geotaggedImg, datetime, currentAddress, function (imageWithText) {
+            const newExif = piexif.dump({
+                "0th": { [piexif.ImageIFD.DateTime]: datetime },
+                "GPS": {
+                    [piexif.GPSIFD.GPSLatitudeRef]: lat < 0 ? 'S' : 'N',
+                    [piexif.GPSIFD.GPSLongitudeRef]: lng < 0 ? 'W' : 'E',
+                    [piexif.GPSIFD.GPSLatitude]: latInExif,
+                    [piexif.GPSIFD.GPSLongitude]: lonInExif
+                }
+            });
+
+            const updatedBase64 = piexif.insert(newExif, originalImg);
+
+            drawTextOnImage(updatedBase64, datetime, currentAddress, function (imageWithText) {
                 const a = document.createElement('a');
                 a.href = imageWithText;
                 a.download = fileName;
