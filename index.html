@@ -24,26 +24,21 @@
     <div class="max-w-md mx-auto bg-white rounded-xl shadow-md p-4">
         <h1 class="text-xl font-bold text-center mb-4">📍 Geotag Foto</h1>
 
-        <!-- Form Unggah Foto -->
-        <label for="photoInput"
-            class="cursor-pointer block text-center text-white bg-blue-500 hover:bg-blue-700 rounded-lg py-2 px-4 mb-4 w-full text-sm">
-            Pilih Foto (JPG)
-        </label>
-        <input type="file" id="photoInput" accept="image/jpeg" class="hidden" />
-
-        <!-- Preview Foto -->
         <div class="mb-4">
-            <img id="preview" class="hidden rounded-lg shadow-md w-full max-w-xs mx-auto" />
+            <label for="photoInput" class="block text-sm font-medium text-gray-700">Unggah Foto (JPG)</label>
+            <input type="file" id="photoInput" accept="image/jpeg"
+                class="mt-2 w-full text-sm text-gray-700 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" />
         </div>
 
-        <!-- Peta -->
+        <div id="imagePreview" class="mb-4 text-center">
+            <img id="previewImage" class="w-full h-64 object-contain border rounded-md hidden" />
+        </div>
+
         <div id="map" class="h-64 w-full mb-4"></div>
 
-        <!-- Koordinat dan Alamat -->
         <div class="text-sm mb-2">Koordinat: <span id="coords">Belum dipilih</span></div>
         <div class="text-sm mb-4">Alamat: <span id="address">Belum tersedia</span></div>
 
-        <!-- Tombol Tambah Geotag & Unduh -->
         <button id="addGeotagBtn" class="bg-blue-500 text-white px-4 py-2 rounded w-full">Tambahkan Geotag &
             Unduh</button>
     </div>
@@ -119,11 +114,9 @@
                 const reader = new FileReader();
                 reader.onload = function (event) {
                     originalImg = event.target.result;
-
-                    // Menampilkan preview foto
-                    const preview = document.getElementById("preview");
-                    preview.src = event.target.result;
-                    preview.classList.remove("hidden"); // Menampilkan gambar preview
+                    const previewImage = document.getElementById('previewImage');
+                    previewImage.src = originalImg;
+                    previewImage.classList.remove('hidden');
                 };
                 reader.readAsDataURL(file);
             } else {
@@ -152,6 +145,62 @@
             });
         }
 
+        function correctImageOrientation(base64Image) {
+            const img = new Image();
+            img.src = base64Image;
+
+            return new Promise((resolve, reject) => {
+                img.onload = function () {
+                    const exifData = piexif.load(base64Image);
+                    const orientation = exifData['0th'][piexif.ImageIFD.Orientation];
+
+                    // Jika tidak ada tag orientasi atau orientasi = 1, gambar sudah dalam posisi yang benar
+                    if (orientation === 1) {
+                        resolve(base64Image);  // Gambar tidak perlu diputar
+                        return;
+                    }
+
+                    const canvas = document.createElement("canvas");
+                    const ctx = canvas.getContext("2d");
+
+                    // Tentukan dimensi canvas sesuai ukuran gambar
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+
+                    // Berdasarkan nilai orientasi, lakukan rotasi atau flip gambar
+                    switch (orientation) {
+                        case 3: // 180 deg
+                            ctx.rotate(Math.PI);
+                            ctx.drawImage(img, -img.width, -img.height);
+                            break;
+                        case 6: // 90 deg
+                            canvas.width = img.height;
+                            canvas.height = img.width;
+                            ctx.rotate(90 * Math.PI / 180);
+                            ctx.drawImage(img, 0, -img.height);
+                            break;
+                        case 8: // -90 deg
+                            canvas.width = img.height;
+                            canvas.height = img.width;
+                            ctx.rotate(-90 * Math.PI / 180);
+                            ctx.drawImage(img, -img.width, 0);
+                            break;
+                        default:
+                            ctx.drawImage(img, 0, 0); // Tidak ada perubahan
+                    }
+
+                    // Ambil gambar yang sudah diperbaiki dari canvas
+                    const fixedBase64Image = canvas.toDataURL();
+                    resolve(fixedBase64Image);
+                };
+
+                img.onerror = function (error) {
+                    reject(error);
+                };
+            });
+        }
+
+        // Fungsi untuk menambahkan teks pada gambar
         function drawTextOnImage(imageBase64, text1, text2, callback) {
             const img = new Image();
             img.onload = function () {
@@ -193,51 +242,33 @@
                     ctx.fillText(line, x, y);
                 };
 
-                // Maksimal lebar teks tetap disesuaikan
-                const maxWidth = img.width * 0.60; // 85% dari lebar gambar
+                wrapText(text1, x, y, img.width * 0.60);
 
-                wrapText(text1, x, y, maxWidth);
-                y += fontSize * 1.5; // Jarak antar baris relatif terhadap ukuran font
-                wrapText(text2, x, y, maxWidth);
+                y += fontSize * 1.4;
+                wrapText(text2, x, y, img.width * 0.60);
 
-                const base64WithText = canvas.toDataURL("image/jpeg");
-                callback(base64WithText);
+                callback(canvas.toDataURL());
             };
             img.src = imageBase64;
         }
 
-        // Event listener untuk tombol Tambahkan Geotag & Unduh
+        // Event untuk tombol tambah geotag dan unduh gambar
         document.getElementById('addGeotagBtn').addEventListener('click', () => {
             if (!lat || !lng || !originalImg) {
                 alert("Pastikan foto dan lokasi telah dipilih!");
                 return;
             }
 
-            const exifData = piexif.load(originalImg);
-            const latInExif = toExifCoord(lat);
-            const lonInExif = toExifCoord(lng);
-
-            const datetime = getCurrentTime();
-            const geotaggedImg = piexif.insert(
-                piexif.dump({
-                    "0th": {
-                        [piexif.ImageIFD.DateTime]: datetime
-                    },
-                    "GPS": {
-                        [piexif.GPSIFD.GPSLatitudeRef]: lat < 0 ? 'S' : 'N',
-                        [piexif.GPSIFD.GPSLongitudeRef]: lng < 0 ? 'W' : 'E',
-                        [piexif.GPSIFD.GPSLatitude]: latInExif,
-                        [piexif.GPSIFD.GPSLongitude]: lonInExif
-                    }
-                }),
-                originalImg
-            );
-
-            drawTextOnImage(geotaggedImg, datetime, currentAddress, function (imageWithText) {
-                const a = document.createElement('a');
-                a.href = imageWithText;
-                a.download = fileName;
-                a.click();
+            correctImageOrientation(originalImg).then(correctedImage => {
+                const datetime = getCurrentTime();
+                const geotaggedImg = drawTextOnImage(correctedImage, datetime, currentAddress, function (imageWithText) {
+                    const a = document.createElement('a');
+                    a.href = imageWithText;
+                    a.download = fileName;
+                    a.click();
+                });
+            }).catch(error => {
+                console.error("Error correcting orientation: ", error);
             });
         });
     </script>
