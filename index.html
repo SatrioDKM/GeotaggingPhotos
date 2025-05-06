@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Alat Geotagging Foto</title>
+    <!-- Piexif.js untuk manipulasi EXIF -->
+    <script src="https://unpkg.com/piexifjs"></script>
+    <!-- Leaflet.js untuk peta interaktif -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- Tailwind CSS untuk styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet Control Geocoder untuk pencarian alamat -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+    <!-- Leaflet Locate Control untuk menemukan lokasi pengguna -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.locatecontrol/dist/L.Control.Locate.min.css" />
+    <script src="https://unpkg.com/leaflet.locatecontrol/dist/L.Control.Locate.min.js"></script>
+</head>
+
+<body class="bg-gray-100 p-4">
+    <div class="max-w-md mx-auto bg-white rounded-xl shadow-md p-4">
+        <h1 class="text-xl font-bold text-center mb-4">📍 Geotag Foto</h1>
+
+        <input type="file" id="photoInput" accept="image/jpeg" class="mb-4" />
+        <div id="map" class="h-64 w-full mb-4"></div>
+        <div class="text-sm mb-2">Koordinat: <span id="coords">Belum dipilih</span></div>
+        <div class="text-sm mb-4">Alamat: <span id="address">Belum tersedia</span></div>
+        <button id="addGeotagBtn" class="bg-blue-500 text-white px-4 py-2 rounded w-full">Tambahkan Geotag &
+            Unduh</button>
+    </div>
+
+    <canvas id="previewCanvas" class="hidden"></canvas>
+
+    <script>
+        let lat = null, lng = null, originalImg = null, fileName = "foto-geotagged.jpg", currentAddress = "";
+
+        // Inisialisasi peta
+        const map = L.map('map').setView([-7.250445, 112.768845], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // Tambahkan kontrol pencarian alamat
+        L.Control.geocoder({ defaultMarkGeocode: false })
+            .on('markgeocode', function (e) {
+                const center = e.geocode.center;
+                lat = center.lat;
+                lng = center.lng;
+                map.setView(center, 15);
+                if (marker) map.removeLayer(marker);
+                marker = L.marker(center).addTo(map);
+                document.getElementById("coords").textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+                fetchAddress(lat, lng);
+            })
+            .addTo(map);
+
+        // Tambahkan kontrol untuk menemukan lokasi pengguna
+        L.control.locate({
+            position: 'topleft',
+            flyTo: true,
+            strings: { title: "Tampilkan Lokasi Saya" },
+            onLocationError: function (err) {
+                alert("Lokasi tidak ditemukan. Pastikan izin lokasi aktif.");
+            },
+            onLocationOutsideMapBounds: function (context) {
+                alert("Lokasi di luar batas peta.");
+            },
+            locateOptions: {
+                enableHighAccuracy: true
+            }
+        }).addTo(map);
+
+        let marker = null;
+        map.on('click', function (e) {
+            lat = e.latlng.lat;
+            lng = e.latlng.lng;
+            document.getElementById("coords").textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+            if (marker) map.removeLayer(marker);
+            marker = L.marker([lat, lng]).addTo(map);
+            fetchAddress(lat, lng);
+        });
+
+        function fetchAddress(lat, lng) {
+            fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+                .then(res => res.json())
+                .then(data => {
+                    currentAddress = data.display_name || "";
+                    document.getElementById("address").textContent = currentAddress;
+                })
+                .catch(() => {
+                    currentAddress = "";
+                    document.getElementById("address").textContent = "Gagal mendapatkan alamat";
+                });
+        }
+
+        document.getElementById('photoInput').addEventListener('change', function (e) {
+            const file = e.target.files[0];
+            fileName = file.name.replace(/\.jpg$/i, '-geotagged.jpg');
+            if (file && file.type === "image/jpeg") {
+                const reader = new FileReader();
+                reader.onload = function (event) {
+                    originalImg = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                alert("Hanya file JPG yang didukung!");
+            }
+        });
+
+        function toExifCoord(val) {
+            val = Math.abs(val);
+            const deg = Math.floor(val);
+            const min = Math.floor((val - deg) * 60);
+            const sec = ((val - deg - min / 60) * 3600).toFixed(2);
+            return [[deg, 1], [min, 1], [parseFloat(sec * 100), 100]];
+        }
+
+        function getCurrentTime() {
+            const now = new Date();
+            const day = String(now.getDate()).padStart(2, '0');
+            const month = String(now.getMonth() + 1).padStart(2, '0'); // bulan dimulai dari 0
+            const year = now.getFullYear();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            return `${day} ${month} ${year}, ${hours}:${minutes}`;
+        }
+
+        function drawTextOnImage(imageBase64, text1, text2, callback) {
+            const img = new Image();
+            img.onload = function () {
+                const canvas = document.getElementById('previewCanvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+
+                ctx.font = `${Math.floor(canvas.width / 30)}px Arial`;
+                ctx.fillStyle = 'white';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2;
+                ctx.textAlign = 'left';
+
+                const x = 10;
+                let y = canvas.height - 50;
+
+                // Fungsi untuk membatasi panjang teks agar tidak melebihi lebar gambar
+                const wrapText = (text, x, y, maxWidth) => {
+                    const words = text.split(' ');
+                    let line = '';
+                    const lineHeight = 30;
+                    for (let i = 0; i < words.length; i++) {
+                        const testLine = line + words[i] + ' ';
+                        const testWidth = ctx.measureText(testLine).width;
+                        if (testWidth > maxWidth && i > 0) {
+                            ctx.strokeText(line, x, y);
+                            ctx.fillText(line, x, y);
+                            line = words[i] + ' ';
+                            y += lineHeight;
+                        } else {
+                            line = testLine;
+                        }
+                    }
+                    ctx.strokeText(line, x, y);
+                    ctx.fillText(line, x, y);
+                };
+
+                // Batasi teks agar tidak keluar dari batas gambar
+                wrapText(text1, x, y, img.width - 20);
+                y += 40; // Menambah jarak untuk teks berikutnya
+                wrapText(text2, x, y, img.width - 20);
+
+                // Mengubah gambar dengan teks menjadi base64 dan memanggil callback
+                const base64WithText = canvas.toDataURL("image/jpeg");
+
+                // Panggil callback untuk melanjutkan proses download
+                callback(base64WithText);
+            };
+            img.src = imageBase64;
+        }
+
+        document.getElementById('addGeotagBtn').addEventListener('click', () => {
+            if (!originalImg || lat === null || lng === null) {
+                alert("Pastikan sudah upload foto dan pilih lokasi!");
+                return;
+            }
+
+            const date = new Date();
+            const formattedDate = `${date.getDate()} ${date.toLocaleString('id-ID', { month: 'long' })} ${date.getFullYear()}, ${date.getHours()}:${date.getMinutes()}`;
+            const text1 = `${formattedDate}`;
+            const text2 = `${currentAddress}`;
+
+            drawTextOnImage(originalImg, text1, text2, (base64WithText) => {
+                const exifObj = piexif.load(base64WithText);
+                exifObj["GPS"] = {
+                    [piexif.GPSIFD.GPSLatitudeRef]: lat >= 0 ? "N" : "S",
+                    [piexif.GPSIFD.GPSLatitude]: toExifCoord(lat),
+                    [piexif.GPSIFD.GPSLongitudeRef]: lng >= 0 ? "E" : "W",
+                    [piexif.GPSIFD.GPSLongitude]: toExifCoord(lng)
+                };
+
+                const exifBytes = piexif.dump(exifObj);
+                const newData = piexif.insert(exifBytes, base64WithText);
+                const link = document.createElement("a");
+                link.href = newData;
+                link.download = fileName;
+                link.click();
+            });
+        });
+
+
+        document.getElementById('addGeotagBtn').addEventListener('click', () => {
+            if (!originalImg || lat === null || lng === null) {
+                alert("Pastikan sudah upload foto dan pilih lokasi!");
+                return;
+            }
+
+            const currentTime = getCurrentTime();
+            const text1 = `${currentTime}`;
+            const text2 = `Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`;
+            const text3 = currentAddress;
+
+            drawTextOnImage(originalImg, text1, text2, text3, (base64WithText) => {
+                const exifObj = piexif.load(base64WithText);
+                exifObj["GPS"] = {
+                    [piexif.GPSIFD.GPSLatitudeRef]: lat >= 0 ? "N" : "S",
+                    [piexif.GPSIFD.GPSLatitude]: toExifCoord(lat),
+                    [piexif.GPSIFD.GPSLongitudeRef]: lng >= 0 ? "E" : "W",
+                    [piexif.GPSIFD.GPSLongitude]: toExifCoord(lng)
+                };
+
+                const exifBytes = piexif.dump(exifObj);
+                const newData = piexif.insert(exifBytes, base64WithText);
+                const link = document.createElement("a");
+                link.href = newData;
+                link.download = fileName;
+                link.click();
+            });
+        });
+    </script>
+</body>
+
+</html>
